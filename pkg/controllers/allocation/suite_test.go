@@ -15,7 +15,6 @@ limitations under the License.
 package allocation_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -25,8 +24,10 @@ import (
 	"github.com/awslabs/karpenter/pkg/controllers/allocation"
 	"github.com/awslabs/karpenter/pkg/packing"
 	"github.com/awslabs/karpenter/pkg/test"
+	"go.uber.org/zap/zapcore"
 	"knative.dev/pkg/ptr"
 
+	"github.com/awslabs/karpenter/pkg/utils/context"
 	"github.com/awslabs/karpenter/pkg/utils/resources"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -45,8 +46,9 @@ func TestAPIs(t *testing.T) {
 	RunSpecs(t, "Provisioner/Allocator")
 }
 
+var ctx = context.NewLoggingContext(zapcore.DebugLevel)
 var controller *allocation.Controller
-var env = test.NewEnvironment(func(e *test.Environment) {
+var env = test.NewEnvironment(ctx, func(e *test.Environment) {
 	cloudProvider := &fake.CloudProvider{}
 	registry.RegisterOrDie(cloudProvider)
 	controller = &allocation.Controller{
@@ -70,7 +72,6 @@ var _ = AfterSuite(func() {
 
 var _ = Describe("Allocation", func() {
 	var provisioner *v1alpha3.Provisioner
-	var ctx context.Context
 	BeforeEach(func() {
 		provisioner = &v1alpha3.Provisioner{
 			ObjectMeta: metav1.ObjectMeta{
@@ -80,7 +81,6 @@ var _ = Describe("Allocation", func() {
 				Cluster: v1alpha3.Cluster{Name: ptr.String("test-cluster"), Endpoint: "http://test-cluster", CABundle: ptr.String("dGVzdC1jbHVzdGVyCg==")},
 			},
 		}
-		ctx = context.Background()
 	})
 
 	AfterEach(func() {
@@ -92,8 +92,8 @@ var _ = Describe("Allocation", func() {
 			It("should default to a cluster zone", func() {
 				// Setup
 				ExpectCreated(env.Client, provisioner)
-				ExpectReconcileSucceeded(controller, client.ObjectKeyFromObject(provisioner))
-				pods := ExpectProvisioningSucceeded(env.Client, controller, provisioner, test.PendingPod())
+				ExpectReconcileSucceeded(ctx, controller, client.ObjectKeyFromObject(provisioner))
+				pods := ExpectProvisioningSucceeded(ctx, env.Client, controller, provisioner, test.PendingPod())
 				// Assertions
 				node := ExpectNodeExists(env.Client, pods[0].Spec.NodeName)
 				Expect(node.Spec.ProviderID).To(ContainSubstring("test-zone-1"))
@@ -102,7 +102,7 @@ var _ = Describe("Allocation", func() {
 				// Setup
 				provisioner.Spec.Zones = []string{"test-zone-2"}
 				ExpectCreated(env.Client, provisioner)
-				pods := ExpectProvisioningSucceeded(env.Client, controller, provisioner, test.PendingPod())
+				pods := ExpectProvisioningSucceeded(ctx, env.Client, controller, provisioner, test.PendingPod())
 				// Assertions
 				node := ExpectNodeExists(env.Client, pods[0].Spec.NodeName)
 				Expect(node.Spec.ProviderID).To(ContainSubstring("test-zone-2"))
@@ -111,7 +111,7 @@ var _ = Describe("Allocation", func() {
 				// Setup
 				provisioner.Spec.Zones = []string{"test-zone-1"}
 				ExpectCreated(env.Client, provisioner)
-				pods := ExpectProvisioningSucceeded(env.Client, controller, provisioner,
+				pods := ExpectProvisioningSucceeded(ctx, env.Client, controller, provisioner,
 					test.PendingPod(test.PodOptions{NodeSelector: map[string]string{v1alpha3.ZoneLabelKey: "test-zone-2"}}),
 				)
 				// Assertions
@@ -121,7 +121,7 @@ var _ = Describe("Allocation", func() {
 		})
 		It("should provision nodes for unconstrained pods", func() {
 			ExpectCreated(env.Client, provisioner)
-			pods := ExpectProvisioningSucceeded(env.Client, controller, provisioner,
+			pods := ExpectProvisioningSucceeded(ctx, env.Client, controller, provisioner,
 				test.PendingPod(), test.PendingPod(),
 			)
 			nodes := &v1.NodeList{}
@@ -161,7 +161,7 @@ var _ = Describe("Allocation", func() {
 			ExpectCreated(env.Client, provisioner)
 			ExpectCreatedWithStatus(env.Client, schedulable...)
 			ExpectCreatedWithStatus(env.Client, unschedulable...)
-			ExpectReconcileSucceeded(controller, client.ObjectKeyFromObject(provisioner))
+			ExpectReconcileSucceeded(ctx, controller, client.ObjectKeyFromObject(provisioner))
 
 			nodes := &v1.NodeList{}
 			Expect(env.Client.List(ctx, nodes)).To(Succeed())
@@ -209,7 +209,7 @@ var _ = Describe("Allocation", func() {
 			ExpectCreated(env.Client, provisioner)
 			ExpectCreatedWithStatus(env.Client, schedulable...)
 			ExpectCreatedWithStatus(env.Client, unschedulable...)
-			ExpectReconcileSucceeded(controller, client.ObjectKeyFromObject(provisioner))
+			ExpectReconcileSucceeded(ctx, controller, client.ObjectKeyFromObject(provisioner))
 
 			nodes := &v1.NodeList{}
 			Expect(env.Client.List(ctx, nodes)).To(Succeed())
@@ -225,7 +225,7 @@ var _ = Describe("Allocation", func() {
 		})
 		It("should provision nodes for accelerators", func() {
 			ExpectCreated(env.Client, provisioner)
-			pods := ExpectProvisioningSucceeded(env.Client, controller, provisioner,
+			pods := ExpectProvisioningSucceeded(ctx, env.Client, controller, provisioner,
 				test.PendingPod(test.PodOptions{
 					ResourceRequirements: v1.ResourceRequirements{Limits: v1.ResourceList{resources.NvidiaGPU: resource.MustParse("1")}},
 				}),
@@ -272,7 +272,7 @@ var _ = Describe("Allocation", func() {
 			ExpectCreated(env.Client, provisioner)
 			ExpectCreatedWithStatus(env.Client, daemonsets...)
 			ExpectCreatedWithStatus(env.Client, schedulable...)
-			ExpectReconcileSucceeded(controller, client.ObjectKeyFromObject(provisioner))
+			ExpectReconcileSucceeded(ctx, controller, client.ObjectKeyFromObject(provisioner))
 
 			nodes := &v1.NodeList{}
 			Expect(env.Client.List(ctx, nodes)).To(Succeed())

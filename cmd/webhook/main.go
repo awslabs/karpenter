@@ -26,10 +26,12 @@ import (
 	"knative.dev/pkg/controller"
 	"knative.dev/pkg/injection"
 	"knative.dev/pkg/injection/sharedmain"
+	"knative.dev/pkg/logging"
 	"knative.dev/pkg/signals"
 	"knative.dev/pkg/system"
 	"knative.dev/pkg/webhook"
 	"knative.dev/pkg/webhook/certificates"
+	"knative.dev/pkg/webhook/configmaps"
 	"knative.dev/pkg/webhook/resourcesemantics/defaulting"
 	"knative.dev/pkg/webhook/resourcesemantics/validation"
 )
@@ -58,15 +60,16 @@ func main() {
 			ServiceName: "karpenter-webhook",
 			SecretName:  "karpenter-webhook-cert",
 		}),
-		"karpenter.webhooks",
+		"webhooks",
 		config,
 		certificates.NewController,
-		NewCRDDefaultingWebhook,
-		NewCRDValidationWebhook,
+		newCRDDefaultingWebhook,
+		newCRDValidationWebhook,
+		newConfigValidationController,
 	)
 }
 
-func NewCRDDefaultingWebhook(ctx context.Context, w configmap.Watcher) *controller.Impl {
+func newCRDDefaultingWebhook(ctx context.Context, w configmap.Watcher) *controller.Impl {
 	return defaulting.NewAdmissionController(ctx,
 		"defaulting.webhook.provisioners.karpenter.sh",
 		"/default-resource",
@@ -76,13 +79,23 @@ func NewCRDDefaultingWebhook(ctx context.Context, w configmap.Watcher) *controll
 	)
 }
 
-func NewCRDValidationWebhook(ctx context.Context, w configmap.Watcher) *controller.Impl {
+func newCRDValidationWebhook(ctx context.Context, w configmap.Watcher) *controller.Impl {
 	return validation.NewAdmissionController(ctx,
 		"validation.webhook.provisioners.karpenter.sh",
 		"/validate-resource",
 		apis.Resources,
 		InjectContext,
 		true,
+	)
+}
+
+func newConfigValidationController(ctx context.Context, cmw configmap.Watcher) *controller.Impl {
+	return configmaps.NewAdmissionController(ctx,
+		"validation.webhook.config.karpenter.sh",
+		"/config-validation",
+		configmap.Constructors{
+			logging.ConfigMapName(): logging.NewConfigFromConfigMap,
+		},
 	)
 }
 

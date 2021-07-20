@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"knative.dev/pkg/ptr"
+	"knative.dev/pkg/signals"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -33,8 +34,9 @@ func TestAPIs(t *testing.T) {
 	RunSpecs(t, "Expiration")
 }
 
+var ctx = signals.NewContext()
 var controller *expiration.Controller
-var env = test.NewEnvironment(func(e *test.Environment) {
+var env = test.NewEnvironment(ctx, func(e *test.Environment) {
 	controller = expiration.NewController(e.Client)
 })
 
@@ -70,7 +72,7 @@ var _ = Describe("Reconciliation", func() {
 		})
 		provisioner.Spec.TTLSecondsUntilExpired = nil
 		ExpectCreated(env.Client, provisioner, node)
-		ExpectReconcileSucceeded(controller, client.ObjectKeyFromObject(node))
+		ExpectReconcileSucceeded(ctx, controller, client.ObjectKeyFromObject(node))
 
 		node = ExpectNodeExists(env.Client, node.Name)
 		Expect(node.DeletionTimestamp.IsZero()).To(BeTrue())
@@ -78,7 +80,7 @@ var _ = Describe("Reconciliation", func() {
 	It("should ignore nodes without a provisioner", func() {
 		node := test.Node(test.NodeOptions{})
 		ExpectCreated(env.Client, provisioner, node)
-		ExpectReconcileSucceeded(controller, client.ObjectKeyFromObject(node))
+		ExpectReconcileSucceeded(ctx, controller, client.ObjectKeyFromObject(node))
 
 		node = ExpectNodeExists(env.Client, node.Name)
 		Expect(node.DeletionTimestamp.IsZero()).To(BeTrue())
@@ -90,7 +92,7 @@ var _ = Describe("Reconciliation", func() {
 			},
 		})
 		ExpectCreated(env.Client, provisioner, node)
-		ExpectReconcileSucceeded(controller, client.ObjectKeyFromObject(node))
+		ExpectReconcileSucceeded(ctx, controller, client.ObjectKeyFromObject(node))
 
 		node = ExpectNodeExists(env.Client, node.Name)
 		Expect(node.DeletionTimestamp.IsZero()).To(BeTrue())
@@ -103,7 +105,7 @@ var _ = Describe("Reconciliation", func() {
 			},
 		})
 		ExpectCreated(env.Client, provisioner, node)
-		ExpectReconcileSucceeded(controller, client.ObjectKeyFromObject(node))
+		ExpectReconcileSucceeded(ctx, controller, client.ObjectKeyFromObject(node))
 
 		ExpectNotFound(env.Client, node)
 	})
