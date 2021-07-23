@@ -78,6 +78,11 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	if err := c.utilization.terminateExpired(ctx, provisioner); err != nil {
 		return reconcile.Result{}, fmt.Errorf("marking nodes terminable, %w", err)
 	}
+
+	// 5. Delete any node that has been unable to come up for 15 minutes.
+	if err := c.utilization.terminateFailedToBecomeReady(ctx, provisioner); err != nil {
+		return reconcile.Result{}, fmt.Errorf("terminating hanging NotReady nodes, %w", err)
+	}
 	return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 }
 

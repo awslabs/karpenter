@@ -31,7 +31,28 @@ func IsReadyAndSchedulable(node v1.Node) bool {
 	return false
 }
 
-func IsPastEmptyTTL(node *v1.Node) bool {
+func IsReady(node v1.Node) bool {
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == v1.NodeReady {
+			return condition.Status == v1.ConditionTrue
+		}
+	}
+	return false
+}
+
+func FailsToBecomeReady(node v1.Node) bool {
+	if time.Since(node.GetCreationTimestamp().Time) < (15 * time.Minute) {
+		return false
+	}
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == v1.NodeReady {
+			return condition.Status == v1.ConditionUnknown && condition.LastTransitionTime.IsZero() && condition.LastHeartbeatTime.IsZero()
+		}
+	}
+	return false
+}
+
+func IsPastEmptyTTL(node v1.Node) bool {
 	ttl, ok := node.Annotations[v1alpha3.ProvisionerTTLAfterEmptyKey]
 	if !ok {
 		return false
@@ -44,7 +65,7 @@ func IsPastEmptyTTL(node *v1.Node) bool {
 }
 
 // IsEmpty returns if the node has 0 non-daemonset pods
-func IsEmpty(node *v1.Node, pods []*v1.Pod) bool {
+func IsEmpty(pods []*v1.Pod) bool {
 	for _, p := range pods {
 		if pod.HasFailed(p) {
 			continue

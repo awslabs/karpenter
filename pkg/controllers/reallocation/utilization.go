@@ -43,11 +43,15 @@ func (u *Utilization) markUnderutilized(ctx context.Context, provisioner *v1alph
 
 	// 2. Get underutilized nodes
 	for _, node := range nodes {
+		// Don't consider nodes that are not ready
+		if !utilsnode.IsReady(*node) {
+			continue
+		}
 		pods, err := u.getPods(ctx, node)
 		if err != nil {
 			return fmt.Errorf("getting pods for node %s, %w", node.Name, err)
 		}
-		if utilsnode.IsEmpty(node, pods) {
+		if utilsnode.IsEmpty(pods) {
 			if _, ok := node.Annotations[v1alpha3.ProvisionerTTLAfterEmptyKey]; !ok {
 				ttlable = append(ttlable, node)
 			}
@@ -88,7 +92,7 @@ func (u *Utilization) clearUnderutilized(ctx context.Context, provisioner *v1alp
 			return fmt.Errorf("listing pods on node %s, %w", node.Name, err)
 		}
 
-		if !utilsnode.IsEmpty(node, pods) {
+		if !utilsnode.IsEmpty(pods) {
 			persisted := node.DeepCopy()
 			delete(node.Labels, v1alpha3.ProvisionerUnderutilizedLabelKey)
 			delete(node.Annotations, v1alpha3.ProvisionerTTLAfterEmptyKey)
@@ -112,8 +116,26 @@ func (u *Utilization) terminateExpired(ctx context.Context, provisioner *v1alpha
 
 	// 2. Trigger termination workflow if past TTLAfterEmpty
 	for _, node := range nodes {
-		if utilsnode.IsPastEmptyTTL(node) {
+		if utilsnode.IsPastEmptyTTL(*node) {
 			zap.S().Infof("Triggering termination for empty node %s", node.Name)
+			if err := u.kubeClient.Delete(ctx, node); err != nil {
+				return fmt.Errorf("sending delete for node %s, %w", node.Name, err)
+			}
+		}
+	}
+	return nil
+}
+
+func (u *Utilization) terminateFailedToBecomeReady(ctx context.Context, provisioner *v1alpha3.Provisioner) error {
+	// 1. Get underutilized nodes
+	nodes, err := u.getNodes(ctx, provisioner, map[string]string{})
+	if err != nil {
+		return fmt.Errorf("listing underutilized nodes, %w", err)
+	}
+
+	// 2. Trigger termination workflow if node has failed to become ready
+	for _, node := range nodes {
+		if utilsnode.FailsToBecomeReady(*node) {
 			if err := u.kubeClient.Delete(ctx, node); err != nil {
 				return fmt.Errorf("sending delete for node %s, %w", node.Name, err)
 			}
