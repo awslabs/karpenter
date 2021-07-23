@@ -21,7 +21,7 @@ import (
 	"io/ioutil"
 	"os"
 
-	"go.uber.org/zap"
+	"knative.dev/pkg/logging"
 )
 
 const (
@@ -39,17 +39,17 @@ func (s *ProvisionerSpec) SetDefaults(ctx context.Context) {}
 // The returned copy might be complemented by dynamic default values which
 // must not be hoisted (saved) into the original Provisioner CRD as those
 // default values might change over time (e.g. rolling upgrade of CABundle, ...).
-func (p *Provisioner) WithDynamicDefaults() (_ Provisioner, err error) {
+func (p *Provisioner) WithDynamicDefaults(ctx context.Context) (_ Provisioner, err error) {
 	provisioner := *p.DeepCopy()
-	provisioner.Spec, err = provisioner.Spec.withDynamicDefaults()
+	provisioner.Spec, err = provisioner.Spec.withDynamicDefaults(ctx)
 	return provisioner, err
 }
 
 // WithDefaults returns a copy of this ProvisionerSpec with some empty
 // properties replaced by default values.
-func (s *ProvisionerSpec) withDynamicDefaults() (_ ProvisionerSpec, err error) {
+func (s *ProvisionerSpec) withDynamicDefaults(ctx context.Context) (_ ProvisionerSpec, err error) {
 	spec := *s.DeepCopy()
-	spec.Cluster, err = spec.Cluster.withDynamicDefaults()
+	spec.Cluster, err = spec.Cluster.withDynamicDefaults(ctx)
 	return spec, err
 }
 
@@ -57,30 +57,30 @@ func (s *ProvisionerSpec) withDynamicDefaults() (_ ProvisionerSpec, err error) {
 // properties replaced by default values. Notably, it will try
 // to load the CABundle from the in-cluster configuraiton if it
 // is not explicitly set.
-func (c *Cluster) withDynamicDefaults() (_ Cluster, err error) {
+func (c *Cluster) withDynamicDefaults(ctx context.Context) (_ Cluster, err error) {
 	cluster := *c.DeepCopy()
-	cluster.CABundle, err = cluster.getCABundle()
+	cluster.CABundle, err = cluster.getCABundle(ctx)
 	return cluster, err
 }
 
-func (c *Cluster) getCABundle() (*string, error) {
+func (c *Cluster) getCABundle(ctx context.Context) (*string, error) {
 	if c.CABundle != nil {
 		// If CABundle is explicitly provided use that one. An empty string is
 		// a valid value here if the intention is to disable the in-cluster CABundle
 		// and using the HTTP client's default trust-store (CABundle) instead.
-		zap.S().Debugf("Using inline CABundle from Provisioner specification")
+		logging.FromContext(ctx).Debugf("Using inline CABundle from Provisioner specification")
 		return c.CABundle, nil
 	}
 	// Otherwise, fallback to the in-cluster configuration.
 	binary, err := ioutil.ReadFile(InClusterCABundlePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			zap.S().Debugf("In-cluster CABundle file %s not found, will use HTTP client's default trust-store instead, %w", InClusterCABundlePath, err)
+			logging.FromContext(ctx).Debugf("In-cluster CABundle file %s not found, will use HTTP client's default trust-store instead, %w", InClusterCABundlePath, err)
 			return nil, nil
 		}
 		return nil, err
 	}
-	zap.S().Debugf("Using in-cluster CABundle from file %s", InClusterCABundlePath)
+	logging.FromContext(ctx).Debugf("Using in-cluster CABundle from file %s", InClusterCABundlePath)
 	encoded := base64.StdEncoding.EncodeToString(binary)
 	return &encoded, nil
 }

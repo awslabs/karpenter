@@ -15,18 +15,21 @@ limitations under the License.
 package v1alpha3
 
 import (
-	"context"
 	"strings"
 	"testing"
 
 	"github.com/Pallinder/go-randomdata"
+	"github.com/awslabs/karpenter/pkg/utils/context"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap/zapcore"
 	"knative.dev/pkg/ptr"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+var ctx = context.NewLoggingContext(zapcore.DebugLevel)
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -34,11 +37,9 @@ func TestAPIs(t *testing.T) {
 }
 
 var _ = Describe("Validation", func() {
-	var ctx context.Context
 	var provisioner *Provisioner
 
 	BeforeEach(func() {
-		ctx = context.Background()
 		provisioner = &Provisioner{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: strings.ToLower(randomdata.SillyName()),

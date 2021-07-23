@@ -15,7 +15,6 @@ limitations under the License.
 package reallocation_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +25,8 @@ import (
 	"github.com/awslabs/karpenter/pkg/cloudprovider/registry"
 	"github.com/awslabs/karpenter/pkg/controllers/reallocation"
 	"github.com/awslabs/karpenter/pkg/test"
+	"github.com/awslabs/karpenter/pkg/utils/context"
+	"go.uber.org/zap/zapcore"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -42,8 +43,9 @@ func TestAPIs(t *testing.T) {
 	RunSpecs(t, "Provisioner/Reallocator")
 }
 
+var ctx = context.NewLoggingContext(zapcore.DebugLevel)
 var controller *reallocation.Controller
-var env = test.NewEnvironment(func(e *test.Environment) {
+var env = test.NewEnvironment(ctx, func(e *test.Environment) {
 	cloudProvider := &fake.CloudProvider{}
 	registry.RegisterOrDie(cloudProvider)
 	controller = reallocation.NewController(
@@ -63,7 +65,6 @@ var _ = AfterSuite(func() {
 
 var _ = Describe("Reallocation", func() {
 	var provisioner *v1alpha3.Provisioner
-	var ctx context.Context
 
 	BeforeEach(func() {
 		provisioner = &v1alpha3.Provisioner{
@@ -73,7 +74,6 @@ var _ = Describe("Reallocation", func() {
 				TTLSecondsAfterEmpty: ptr.Int64(300),
 			},
 		}
-		ctx = context.Background()
 	})
 
 	AfterEach(func() {
@@ -89,7 +89,7 @@ var _ = Describe("Reallocation", func() {
 			})
 			ExpectCreated(env.Client, provisioner)
 			ExpectCreatedWithStatus(env.Client, node)
-			ExpectReconcileSucceeded(controller, client.ObjectKeyFromObject(provisioner))
+			ExpectReconcileSucceeded(ctx, controller, client.ObjectKeyFromObject(provisioner))
 
 			updatedNode := &v1.Node{}
 			Expect(env.Client.Get(ctx, client.ObjectKey{Name: node.Name}, updatedNode)).To(Succeed())
@@ -114,7 +114,7 @@ var _ = Describe("Reallocation", func() {
 				NodeName:   node.Name,
 				Conditions: []v1.PodCondition{{Type: v1.PodReady, Status: v1.ConditionTrue}},
 			}))
-			ExpectReconcileSucceeded(controller, client.ObjectKeyFromObject(provisioner))
+			ExpectReconcileSucceeded(ctx, controller, client.ObjectKeyFromObject(provisioner))
 
 			updatedNode := &v1.Node{}
 			Expect(env.Client.Get(ctx, client.ObjectKey{Name: node.Name}, updatedNode)).To(Succeed())
